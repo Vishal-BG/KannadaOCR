@@ -6,6 +6,7 @@ import pytesseract
 import easyocr
 from transformers import TrOCRProcessor, VisionEncoderDecoderModel
 from scipy import ndimage
+import re  # Add this import at the top of the file
 
 def preprocess_image(image, contrast=1.0, brightness=0, binarize=False, denoise=False, deskew=False):
     img = cv2.cvtColor(np.array(image), cv2.COLOR_RGB2BGR)
@@ -73,12 +74,21 @@ def search_keyword(text, keyword):
     
     return matches
 
-def highlight_keyword(text, matches, keyword):
+def highlight_keyword(text, matches):
+    # Convert the text to a list of characters for easier manipulation
+    text_chars = list(text)
+    
     # Sort matches in reverse order to avoid index issues when adding highlighting
     for match in reversed(matches):
         start, end = match.span()
-        text = text[:start] + f"**{text[start:end]}**" + text[end:]
-    return text
+        text_chars.insert(end, '</span>')
+        text_chars.insert(start, '<span style="background-color: blue;">')
+    
+    # Join the characters back into a string
+    return ''.join(text_chars)
+
+def extract_matches(text, matches):
+    return [text[match.start():match.end()] for match in matches]
 
 def main():
     st.set_page_config(page_title="Kannada Handwritten Text Recognition and Search", layout="wide")
@@ -136,7 +146,7 @@ def main():
 
                     st.session_state.full_text = full_text  # Store the recognized text in session state
                     st.subheader("Extracted Text:")
-                    st.text_area("", value=full_text, height=200)
+                    st.text_area("", value=full_text, height=200, key="extracted_text")
 
                     st.subheader("Confidence Feedback")
                     confidence = st.slider("How accurate was the recognition? (0-100)", 0, 100, 50)
@@ -145,26 +155,36 @@ def main():
 
         # Keyword search section
         st.header("Keyword Search")
-        search_keyword = st.text_input("Enter a keyword or phrase to search:")
-        if search_keyword and 'full_text' in st.session_state:
-            matches = search_keyword(st.session_state.full_text, search_keyword)
+        search_keyword_input = st.text_input("Enter a keyword or phrase to search:")
+        if search_keyword_input and 'full_text' in st.session_state:
+            matches = search_keyword(st.session_state.full_text, search_keyword_input)
             if matches:
-                st.success(f"Found {len(matches)} occurrence(s) of '{search_keyword}'")
-                highlighted_text = highlight_keyword(st.session_state.full_text, matches, search_keyword)
-                st.markdown(highlighted_text)
+                st.success(f"Found {len(matches)} occurrence(s) of '{search_keyword_input}'")
+                
+                # Display original text with highlights
+                st.subheader("Original Text with Highlights:")
+                highlighted_text = highlight_keyword(st.session_state.full_text, matches)
+                st.markdown(highlighted_text, unsafe_allow_html=True)
+                
+                # Display matched portions separately
+                st.subheader("Matched Portions:")
+                matched_texts = extract_matches(st.session_state.full_text, matches)
+                for i, match in enumerate(matched_texts, 1):
+                    st.markdown(f"{i}. {match}")
             else:
-                st.warning(f"No occurrences of '{search_keyword}' found in the text.")
+                st.warning(f"No occurrences of '{search_keyword_input}' found in the text.")
+                st.markdown(st.session_state.full_text)  # Display the original text if no matches found
 
     st.sidebar.header("Tips for Better Results")
     st.sidebar.markdown("""
     1. Ensure good lighting and contrast in the image.
-    2. Try different preprocessing settings, especially binarization and deskewing.
-    3. For large handwritten files, use the 'Segment Image' option to process text in smaller chunks.
-    4. EasyOCR often performs well for Indic scripts like Kannada.
-    5. Experiment with denoising for images with background noise.
-    6. If results are poor, try adjusting the image before uploading (e.g., increase contrast, convert to grayscale).
-    7. For mixed Kannada and English text, the system now supports both languages.
-    8. When searching for keywords, try variations of the word to account for potential OCR errors.
+     2. Try different preprocessing settings, especially binarization and deskewing.
+     3. For large handwritten files, use the 'Segment Image' option to process text in smaller chunks.
+     4. EasyOCR often performs well for Indic scripts like Kannada.
+     5. Experiment with denoising for images with background noise.
+     6. If results are poor, try adjusting the image before uploading (e.g., increase contrast, convert to grayscale).
+     7. For mixed Kannada and English text, the system now supports both languages.
+     8. When searching for keywords, try variations of the word to account for potential OCR errors.
     """)
 
     st.sidebar.header("About")
